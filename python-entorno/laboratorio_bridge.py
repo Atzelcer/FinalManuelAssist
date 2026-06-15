@@ -70,9 +70,11 @@ CURSOR_MAP = {
     "menique": ["right_click"],
 }
 
-MOUSE_DEADZONE = 1.2
-MOUSE_GAIN = 0.95
-MOUSE_MAX_STEP = 70
+MOUSE_DEADZONE = 0.6
+MOUSE_GAIN = 2.2
+MOUSE_TILT_GAIN = 1.35
+MOUSE_MAX_STEP = 180
+CURSOR_REST_SETTLE_SECONDS = 0.28
 
 
 class WebSocketHub:
@@ -126,6 +128,7 @@ class LabState:
         self.keyboard = Controller() if Controller else None
         self.mouse = MouseController() if MouseController else None
         self.cursor_gyro_enabled = False
+        self.cursor_rest_candidate_at = 0.0
         self.last_imu_at = 0.0
 
     def publish(self, payload):
@@ -147,6 +150,7 @@ class LabState:
         self.locked_finger = None
         self.waiting_for_rest = False
         self.cursor_gyro_enabled = False
+        self.cursor_rest_candidate_at = 0.0
         self.mode_window_until = 0.0
         self.mode_window_seen.clear()
 
@@ -170,6 +174,10 @@ class LabState:
         for finger in DEDOS_ORDEN:
             self.publish({"type": "finger", "finger": finger, "status": "reposo"})
         self.publish({"type": "mode", "mode": self.mode})
+        try:
+            send_mode_to_esp()
+        except Exception:
+            pass
 
     def active_count(self):
         return sum(1 for d in DEDOS_ORDEN if self.curr_states[d] == "activo")
@@ -330,9 +338,13 @@ class LabState:
             self.prev_states[finger] = status
 
             if self.mode == "cursor" and finger == "indice":
-                self.reset_selection()
-                self.cursor_gyro_enabled = status == "activo"
-                self.publish({"type": "finger", "finger": finger, "status": status})
+                if status == "activo":
+                    self.reset_selection()
+                    self.cursor_gyro_enabled = True
+                    self.cursor_rest_candidate_at = 0.0
+                    self.publish({"type": "finger", "finger": finger, "status": "activo"})
+                else:
+                    self.cursor_rest_candidate_at = now
                 return
 
             if self.waiting_for_rest:
@@ -395,20 +407,44 @@ class LabState:
                 return
             self.resolve_mode_window_if_expired(now)
 
+            if self.cursor_gyro_enabled and self.cursor_rest_candidate_at:
+                if now - self.cursor_rest_candidate_at >= CURSOR_REST_SETTLE_SECONDS:
+                    self.cursor_gyro_enabled = False
+                    self.cursor_rest_candidate_at = 0.0
+                    self.publish({"type": "finger", "finger": "indice", "status": "reposo"})
+
     def handle_imu(self, finger, angle_x, angle_y, gyro_x, gyro_y, status):
         if not self.enabled or self.mode != "cursor" or finger != "indice":
             return
-        self.cursor_gyro_enabled = status == "activo"
+        if status == "activo":
+            self.cursor_gyro_enabled = True
+            self.cursor_rest_candidate_at = 0.0
         if not self.cursor_gyro_enabled or not self.mouse:
             return
 
+        raw_dx = (gyro_y * MOUSE_GAIN) + (angle_y * MOUSE_TILT_GAIN)
+        raw_dy = (-gyro_x * MOUSE_GAIN) - (angle_x * MOUSE_TILT_GAIN)
+        movement = max(abs(raw_dx), abs(raw_dy))
         now = time.time()
-        if now - self.last_imu_at < 0.012:
+
+        if status == "reposo":
+            if movement < MOUSE_DEADZONE:
+                if self.cursor_rest_candidate_at == 0.0:
+                    self.cursor_rest_candidate_at = now
+                if now - self.cursor_rest_candidate_at >= CURSOR_REST_SETTLE_SECONDS:
+                    self.cursor_gyro_enabled = False
+                    self.cursor_rest_candidate_at = 0.0
+                    self.publish({"type": "finger", "finger": "indice", "status": "reposo"})
+                    return
+            else:
+                self.cursor_rest_candidate_at = 0.0
+
+        if now - self.last_imu_at < 0.006:
             return
         self.last_imu_at = now
 
-        dx = 0.0 if abs(gyro_y) < MOUSE_DEADZONE else gyro_y * MOUSE_GAIN
-        dy = 0.0 if abs(gyro_x) < MOUSE_DEADZONE else -gyro_x * MOUSE_GAIN
+        dx = 0.0 if abs(raw_dx) < MOUSE_DEADZONE else raw_dx
+        dy = 0.0 if abs(raw_dy) < MOUSE_DEADZONE else raw_dy
         dx = max(-MOUSE_MAX_STEP, min(MOUSE_MAX_STEP, dx))
         dy = max(-MOUSE_MAX_STEP, min(MOUSE_MAX_STEP, dy))
         if abs(dx) < 0.5 and abs(dy) < 0.5:
@@ -447,6 +483,12 @@ def send_udp(msg):
         state.publish({"type": "error", "message": "ESP32 no conectado"})
         return
     udp_sock.sendto(msg.encode("utf-8"), (state.esp32_ip, ESP_PORT))
+
+
+def send_mode_to_esp():
+    if not state.esp32_ip:
+        return
+    send_udp(f"CMD:MODE,{state.mode}")
 
 
 def parse_udp(msg):
@@ -550,6 +592,7 @@ def handle_ws_message(raw):
     action = msg.get("action")
     if action == "start":
         send_udp("CMD:START_STREAM")
+        send_mode_to_esp()
     elif action == "stop":
         send_udp("CMD:STOP_STREAM")
         state.set_enabled(False)
@@ -567,6 +610,7 @@ def handle_ws_message(raw):
             state.mode = mode
             state.reset_selection()
             state.publish({"type": "mode", "mode": mode})
+            send_mode_to_esp()
 
 
 def ws_client(conn):

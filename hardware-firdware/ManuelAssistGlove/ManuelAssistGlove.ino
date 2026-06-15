@@ -71,6 +71,7 @@ unsigned long ultimoEnvioImu = 0;
 bool calibracionPendiente = false;
 bool sensoresCalibrados = false;
 bool envioDatosHabilitado = false;
+bool modoComplementos = false;
 
 const float ALPHA_ANGLE = 0.28;
 const float DEADZONE_GYRO = 2.0;

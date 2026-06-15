@@ -2,6 +2,19 @@ void enviarCambios() {
   unsigned long now = millis();
 
   for (uint8_t i = 0; i < NUM_SENSORES; i++) {
+    if (modoComplementos && i == INDICE) {
+      if (estadoConfirmado[i] != ultimoEstadoEnviado[i]) {
+        enviarDato(dedos[i], estadoConfirmado[i]);
+        ultimoEstadoEnviado[i] = estadoConfirmado[i];
+      }
+      if (estadoConfirmado[i] == "reposo") {
+        pulsoActivoEnviado[i] = false;
+        pulsoReposoForzado[i] = false;
+        pulsoActivoDesde[i] = 0;
+      }
+      continue;
+    }
+
     if (estadoConfirmado[i] == "activo") {
       if (!pulsoActivoEnviado[i]) {
         enviarDato(dedos[i], "activo");

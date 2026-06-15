@@ -65,6 +65,7 @@ void procesarRed() {
     pcIp = udp.remoteIP();
     pcConectada = true;
     envioDatosHabilitado = false;
+    modoComplementos = false;
     enviarSistema("PC_CONECTADA");
     return;
   }
@@ -92,6 +93,14 @@ void procesarRed() {
     return;
   }
 
+  if (msg.startsWith("CMD:MODE,")) {
+    String modo = msg.substring(9);
+    modo.trim();
+    modoComplementos = (modo == "cursor");
+    enviarSistema("MODO_" + modo);
+    return;
+  }
+
   if (msg == "CMD:STOP_STREAM") {
     envioDatosHabilitado = false;
     enviarSistema("STREAM_PAUSADO");
@@ -111,6 +120,7 @@ void procesarRed() {
 
 void olvidarConexion() {
   envioDatosHabilitado = false;
+  modoComplementos = false;
   ultimoEnvioImu = 0;
   pcConectada = false;
   pcIp = IPAddress(0, 0, 0, 0);
