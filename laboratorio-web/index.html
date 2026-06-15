@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Manuel Assist Lab</title>
+    <link rel="stylesheet" href="./styles.css">
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+        }
+      }
+    </script>
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="viewer-panel" aria-label="Visor 3D">
+        <div class="topbar">
+          <div>
+            <h1>Manuel Assist Lab</h1>
+            <p id="modelStatus">Cargando modelo riggeado...</p>
+          </div>
+          <div class="toolbar">
+            <button id="resetPoseBtn" type="button" title="Resetear pose">Reset</button>
+            <button id="focusBtn" type="button" title="Centrar modelo">Centrar</button>
+            <button id="demoBtn" type="button" title="Animacion de prueba">Demo</button>
+          </div>
+        </div>
+        <div class="writing-console" aria-label="Teclado principal">
+          <div class="write-head">
+            <textarea id="textOutput" rows="2" placeholder="Texto generado automaticamente" disabled></textarea>
+            <div class="segmented" role="group" aria-label="Modo">
+              <button class="mode-btn active" type="button" data-mode="letters">ABC</button>
+              <button class="mode-btn" type="button" data-mode="numbers">123</button>
+              <button class="mode-btn" type="button" data-mode="cursor">Cursor</button>
+            </div>
+          </div>
+          <div id="keyboard" class="keyboard main-keyboard"></div>
+        </div>
+        <div id="sceneHost" class="scene-host"></div>
+        <div class="status-strip">
+          <span id="loadBadge">Modelo: pendiente</span>
+          <span id="serialBadge">ESP32: desconectado</span>
+          <span id="modeBadge">Modo: letras</span>
+        </div>
+      </section>
+
+      <aside class="control-panel" aria-label="Controles del laboratorio">
+        <section class="panel-section">
+          <div class="section-head">
+            <h2>Conexión</h2>
+            <span id="lastEvent">Sin datos</span>
+          </div>
+          <div class="button-grid">
+            <button id="connectWsBtn" type="button">Conectar</button>
+            <button id="calibrateBtn" type="button">Calibrar</button>
+            <button id="startLabBtn" type="button">Iniciar</button>
+            <button id="pauseLabBtn" type="button">Pausar</button>
+            <button id="disconnectSerialBtn" type="button">Cerrar conexion</button>
+            <button id="simulateBtn" type="button">Demo local</button>
+          </div>
+          <div class="calibration-box">
+            <div class="calibration-track">
+              <div id="calibrationFill" class="calibration-fill"></div>
+            </div>
+            <span id="calibrationLabel">Calibracion: 0%</span>
+          </div>
+          <label class="field">
+            <span>WebSocket del puente</span>
+            <input id="wsUrl" value="ws://127.0.0.1:8765" spellcheck="false">
+          </label>
+        </section>
+
+        <section class="panel-section">
+          <div class="section-head">
+            <h2>Dedos</h2>
+            <div class="select-stack">
+              <select id="viewSelect" aria-label="Vista">
+                <option value="r">Ver derecha</option>
+                <option value="l">Ver izquierda</option>
+                <option value="both">Ver ambas</option>
+              </select>
+              <select id="handSelect" aria-label="Mano activa">
+                <option value="r">Control derecha</option>
+                <option value="l">Control izquierda</option>
+              </select>
+            </div>
+          </div>
+          <div id="fingerControls" class="finger-controls"></div>
+        </section>
+
+        <section class="panel-section compact">
+          <div class="section-head">
+            <h2>Huesos detectados</h2>
+            <span id="boneSummary">Esperando modelo</span>
+          </div>
+          <div id="boneReport" class="bone-report"></div>
+        </section>
+      </aside>
+    </main>
+
+    <script type="module" src="./app.js?v=20260615-one-finger-fast"></script>
+  </body>
+</html>
