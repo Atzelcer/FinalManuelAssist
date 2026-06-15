@@ -12,6 +12,7 @@ Responsabilidades:
 import base64
 import hashlib
 import json
+import sys
 import socket
 import struct
 import threading
@@ -22,6 +23,12 @@ try:
 except Exception:
     Controller = None
     Key = None
+
+try:
+    from pynput.mouse import Button, Controller as MouseController
+except Exception:
+    Button = None
+    MouseController = None
 
 
 UDP_IP = "0.0.0.0"
@@ -48,20 +55,24 @@ LETTER_MAP = {
 }
 
 NUMBER_MAP = {
-    "pulgar": ["1", "2"],
-    "indice": ["3", "4"],
-    "medio": ["5", "6"],
-    "anular": ["7", "8"],
-    "menique": ["9", "0"],
+    "pulgar": ["1", "2", "+"],
+    "indice": ["3", "4", "-"],
+    "medio": ["5", "6", "*"],
+    "anular": ["7", "8", "/"],
+    "menique": ["9", "0", ".", ";"],
 }
 
 CURSOR_MAP = {
-    "pulgar": ["space", "enter"],
-    "indice": ["right", "left"],
-    "medio": ["up", "down"],
-    "anular": ["backspace", "tab"],
-    "menique": ["mode", "escape"],
+    "pulgar": ["windows"],
+    "indice": ["cursor_gyro"],
+    "medio": ["clear"],
+    "anular": ["left_click"],
+    "menique": ["right_click"],
 }
+
+MOUSE_DEADZONE = 1.2
+MOUSE_GAIN = 0.95
+MOUSE_MAX_STEP = 70
 
 
 class WebSocketHub:
@@ -113,6 +124,9 @@ class LabState:
         self.esp32_ip = None
         self.pc_ip_local = None
         self.keyboard = Controller() if Controller else None
+        self.mouse = MouseController() if MouseController else None
+        self.cursor_gyro_enabled = False
+        self.last_imu_at = 0.0
 
     def publish(self, payload):
         self.hub.broadcast(payload)
@@ -132,6 +146,7 @@ class LabState:
         self.visual_released = True
         self.locked_finger = None
         self.waiting_for_rest = False
+        self.cursor_gyro_enabled = False
         self.mode_window_until = 0.0
         self.mode_window_seen.clear()
 
@@ -177,15 +192,44 @@ class LabState:
             return None
         return options[(self.pending_count - 1) % len(options)]
 
+    def press_windows_key(self):
+        if sys.platform.startswith("win"):
+            try:
+                import ctypes
+                user32 = ctypes.windll.user32
+                vk_lwin = 0x5B
+                key_up = 0x0002
+                user32.keybd_event(vk_lwin, 0, 0, 0)
+                user32.keybd_event(vk_lwin, 0, key_up, 0)
+                return
+            except Exception as exc:
+                self.publish({"type": "error", "message": f"windows: {exc}"})
+
+        win_key = getattr(Key, "cmd", None) or getattr(Key, "cmd_l", None) if Key else None
+        if self.keyboard and win_key:
+            self.keyboard.press(win_key)
+            self.keyboard.release(win_key)
+
+    def clear_text_target(self):
+        if not self.keyboard or not Key:
+            return
+        ctrl_key = getattr(Key, "ctrl", None) or getattr(Key, "ctrl_l", None)
+        if not ctrl_key:
+            return
+        self.keyboard.press(ctrl_key)
+        self.keyboard.press("a")
+        self.keyboard.release("a")
+        self.keyboard.release(ctrl_key)
+        self.keyboard.press(Key.backspace)
+        self.keyboard.release(Key.backspace)
+
     def emit_key(self, key):
         if not key:
             return
         self.publish({"type": "confirm", "key": key, "mode": self.mode})
-        if not self.keyboard:
-            return
         try:
             if self.mode == "cursor":
-                special = {
+                special = {} if not Key else {
                     "space": Key.space,
                     "enter": Key.enter,
                     "right": Key.right,
@@ -198,10 +242,21 @@ class LabState:
                 }
                 if key == "mode":
                     self.cycle_mode()
+                elif key == "windows":
+                    self.press_windows_key()
+                elif key == "clear":
+                    self.clear_text_target()
                 elif key in special:
-                    self.keyboard.press(special[key])
-                    self.keyboard.release(special[key])
+                    if self.keyboard:
+                        self.keyboard.press(special[key])
+                        self.keyboard.release(special[key])
+                elif key == "left_click" and self.mouse and Button:
+                    self.mouse.click(Button.left, 1)
+                elif key == "right_click" and self.mouse and Button:
+                    self.mouse.click(Button.right, 1)
             else:
+                if not self.keyboard:
+                    return
                 self.keyboard.type(key)
         except Exception as exc:
             self.publish({"type": "error", "message": f"teclado: {exc}"})
@@ -263,6 +318,9 @@ class LabState:
             if finger not in self.curr_states or status not in ("activo", "reposo"):
                 return
 
+            if self.mode == "cursor" and self.cursor_gyro_enabled and finger != "indice":
+                return
+
             if self.pending_finger and now >= self.confirm_at:
                 self.confirm()
 
@@ -270,6 +328,12 @@ class LabState:
             self.curr_states[finger] = status
             rising = prev == "reposo" and status == "activo"
             self.prev_states[finger] = status
+
+            if self.mode == "cursor" and finger == "indice":
+                self.reset_selection()
+                self.cursor_gyro_enabled = status == "activo"
+                self.publish({"type": "finger", "finger": finger, "status": status})
+                return
 
             if self.waiting_for_rest:
                 if self.all_resting():
@@ -331,6 +395,38 @@ class LabState:
                 return
             self.resolve_mode_window_if_expired(now)
 
+    def handle_imu(self, finger, angle_x, angle_y, gyro_x, gyro_y, status):
+        if not self.enabled or self.mode != "cursor" or finger != "indice":
+            return
+        self.cursor_gyro_enabled = status == "activo"
+        if not self.cursor_gyro_enabled or not self.mouse:
+            return
+
+        now = time.time()
+        if now - self.last_imu_at < 0.012:
+            return
+        self.last_imu_at = now
+
+        dx = 0.0 if abs(gyro_y) < MOUSE_DEADZONE else gyro_y * MOUSE_GAIN
+        dy = 0.0 if abs(gyro_x) < MOUSE_DEADZONE else -gyro_x * MOUSE_GAIN
+        dx = max(-MOUSE_MAX_STEP, min(MOUSE_MAX_STEP, dx))
+        dy = max(-MOUSE_MAX_STEP, min(MOUSE_MAX_STEP, dy))
+        if abs(dx) < 0.5 and abs(dy) < 0.5:
+            return
+
+        try:
+            self.mouse.move(int(dx), int(dy))
+            self.publish({
+                "type": "cursor",
+                "finger": finger,
+                "dx": int(dx),
+                "dy": int(dy),
+                "angle_x": round(angle_x, 2),
+                "angle_y": round(angle_y, 2),
+            })
+        except Exception as exc:
+            self.publish({"type": "error", "message": f"mouse: {exc}"})
+
 
 hub = WebSocketHub()
 state = LabState(hub)
@@ -381,6 +477,20 @@ def parse_udp(msg):
         except Exception:
             current, total, pct = 0, 0, 0
         state.publish({"type": "calibration", "current": current, "total": total, "percent": pct})
+        return
+    if msg.startswith("IMU:"):
+        parts = [part.strip() for part in msg[4:].split(",")]
+        if len(parts) >= 6:
+            try:
+                finger = parts[0].lower()
+                angle_x = float(parts[1])
+                angle_y = float(parts[2])
+                gyro_x = float(parts[3])
+                gyro_y = float(parts[4])
+                status = parts[5].lower()
+                state.handle_imu(finger, angle_x, angle_y, gyro_x, gyro_y, status)
+            except Exception as exc:
+                state.publish({"type": "error", "message": f"imu: {exc}"})
         return
     if ":" in msg:
         finger, status = [part.strip().lower() for part in msg.split(":", 1)]

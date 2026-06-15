@@ -55,6 +55,7 @@ const letterMap = {
   anular: ["q", "r", "s", "t", "u"],
   menique: ["v", "w", "x", "y", "z"]
 };
+letterMap.medio = ["m", "n", "\u00f1", "o", "p"];
 
 const state = {
   hand: "r",
@@ -924,6 +925,16 @@ function handleBridgeMessage(msg) {
       writeText("  ");
     } else if (msg.key === "backspace") {
       deletePreviousChar();
+    } else if (msg.key === "clear") {
+      clearTextOutput();
+    } else if (msg.key === "windows") {
+      els.lastEvent.textContent = "Complementos: Windows";
+    } else if (msg.key === "left_click") {
+      els.lastEvent.textContent = "Complementos: click izquierdo";
+    } else if (msg.key === "right_click") {
+      els.lastEvent.textContent = "Complementos: click derecho";
+    } else if (String(msg.key || "").startsWith("mouse_")) {
+      els.lastEvent.textContent = `Complementos: ${msg.key}`;
     }
     if (msg.key) markKeyboardKey(msg.key, "key-confirmed", 900);
     return;
@@ -965,6 +976,11 @@ function deletePreviousChar() {
   }
 }
 
+function clearTextOutput() {
+  els.textOutput.value = "";
+  els.textOutput.selectionStart = els.textOutput.selectionEnd = 0;
+}
+
 function markModeChange() {
   document.querySelectorAll(".mode-btn.active").forEach((button) => {
     button.classList.add("key-confirmed");
@@ -973,7 +989,18 @@ function markModeChange() {
 }
 
 function markKeyboardKey(value, className, duration = 500) {
-  const key = String(value).toLowerCase();
+  const aliases = {
+    windows: "windows",
+    mouse_left: "cursor izquierda",
+    mouse_right: "cursor derecha",
+    mouse_up: "cursor arriba",
+    mouse_down: "cursor abajo",
+    backspace: "borrar",
+    clear: "borrar",
+    left_click: "click izquierdo",
+    right_click: "click derecho"
+  };
+  const key = aliases[String(value).toLowerCase()] || String(value).toLowerCase();
   const button = [...els.keyboard.querySelectorAll("button")]
     .find((item) => item.dataset.key === key);
   if (!button) return;
@@ -1084,6 +1111,24 @@ function simulateEsp32() {
 }
 
 function renderKeyboard() {
+  const layoutsOverride = {
+    letters: "abcdefghijklmnÃ±opqrstuvwxyz".split(""),
+    numbers: ["1", "2", "+", "3", "4", "-", "5", "6", "*", "7", "8", "/", "9", "0", ".", ";"],
+    cursor: ["Windows", "Cursor izquierda", "Cursor derecha", "Cursor arriba", "Cursor abajo", "Borrar", "Click izquierdo", "Click derecho", "Modo ABC", "Modo 123"]
+  };
+  layoutsOverride.letters = ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l", "m", "n", "\u00f1", "o", "p", "q", "r", "s", "t", "u", "v", "w", "x", "y", "z"];
+  els.keyboard.innerHTML = "";
+  for (const key of layoutsOverride[state.mode]) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = key;
+    button.dataset.key = String(key).toLowerCase();
+    button.disabled = !state.labEnabled;
+    button.addEventListener("click", () => pressVirtualKey(key));
+    els.keyboard.appendChild(button);
+  }
+  return;
+
   const layouts = {
     letters: "abcdefghijklmnñopqrstuvwxyz".split(""),
     numbers: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "0", ".", ",", "-", "+", "/", "="],
@@ -1105,7 +1150,7 @@ function renderKeyboard() {
 function pressVirtualKey(key) {
   if (!state.labEnabled) return;
   if (key === "Borrar") {
-    deletePreviousChar();
+    clearTextOutput();
     return;
   }
   if (key === "Enter") return writeText("\n");
@@ -1113,6 +1158,11 @@ function pressVirtualKey(key) {
   if (key === "Tab") return writeText("  ");
   if (key === "Modo ABC") return setMode("letters");
   if (key === "Modo 123") return setMode("numbers");
+  if (["Windows", "Click izquierdo", "Click derecho"].includes(key) || key.startsWith("Cursor ")) {
+    els.lastEvent.textContent = `Complementos: ${key}`;
+    markKeyboardKey(key, "key-confirmed", 500);
+    return;
+  }
   if (["←", "→", "↑", "↓", "Inicio", "Fin"].includes(key)) {
     els.lastEvent.textContent = `Cursor: ${key}`;
     markKeyboardKey(key, "key-confirmed", 500);
@@ -1124,7 +1174,7 @@ function pressVirtualKey(key) {
 
 function setMode(mode) {
   state.mode = mode;
-  const label = mode === "letters" ? "letras" : mode === "numbers" ? "numeros" : "cursor";
+  const label = mode === "letters" ? "letras" : mode === "numbers" ? "numeros" : "complementos";
   setBadge(els.modeBadge, `Modo: ${label}`, "info");
   document.querySelectorAll(".mode-btn").forEach((btn) => {
     btn.classList.toggle("active", btn.dataset.mode === mode);

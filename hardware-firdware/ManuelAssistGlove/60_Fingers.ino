@@ -11,6 +11,8 @@ void actualizarDedo(uint8_t i, float dt) {
 
   gx = deadzone(gx - gyroOffsetX[i]);
   gy = deadzone(gy - gyroOffsetY[i]);
+  gyroRateX[i] = gx;
+  gyroRateY[i] = gy;
 
   float accelAngleX = atan2(ay, az) * 180.0 / PI;
   float accelAngleY = atan2(-ax, sqrt((ay * ay) + (az * az))) * 180.0 / PI;

@@ -10,6 +10,8 @@ void resetearDedo(uint8_t i) {
   angleY[i] = 0;
   angleXFilt[i] = 0;
   angleYFilt[i] = 0;
+  gyroRateX[i] = 0;
+  gyroRateY[i] = 0;
 }
 
 String clasificarMovimiento(uint8_t i) {

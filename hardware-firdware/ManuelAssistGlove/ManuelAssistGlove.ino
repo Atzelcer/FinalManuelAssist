@@ -54,6 +54,8 @@ float angleX[NUM_SENSORES];
 float angleY[NUM_SENSORES];
 float angleXFilt[NUM_SENSORES];
 float angleYFilt[NUM_SENSORES];
+float gyroRateX[NUM_SENSORES];
+float gyroRateY[NUM_SENSORES];
 
 String estadoTemporal[NUM_SENSORES];
 String estadoConfirmado[NUM_SENSORES];
@@ -64,6 +66,7 @@ unsigned long pulsoActivoDesde[NUM_SENSORES];
 
 uint8_t contadorEstable[NUM_SENSORES];
 unsigned long lastTime = 0;
+unsigned long ultimoEnvioImu = 0;
 
 bool calibracionPendiente = false;
 bool sensoresCalibrados = false;
@@ -75,7 +78,7 @@ const float COMPLEMENTARY = 0.96;
 
 float ACTIVAR_ON[NUM_SENSORES] = {
   6.0,    // meñique
-  1.8,    // anular
+  3.5,    // anular
   6.0,    // medio
   14.0,   // índice
   14.0    // pulgar
@@ -83,7 +86,7 @@ float ACTIVAR_ON[NUM_SENSORES] = {
 
 float ACTIVAR_OFF[NUM_SENSORES] = {
   3.8,    // meñique
-  0.5,    // anular
+  1.8,    // anular
   3.0,    // medio
   7.0,    // índice
   7.0     // pulgar
@@ -92,6 +95,7 @@ float ACTIVAR_OFF[NUM_SENSORES] = {
 const uint8_t FRAMES_CONFIRMACION = 2;
 const uint8_t FRAMES_REPOSO_RAPIDO = 1;
 const unsigned long PULSO_ACTIVO_MS = 800;
+const unsigned long IMU_CURSOR_MS = 18;
 
 const int   CAL_WARMUP       = 80;
 const int   CAL_MUESTRAS     = 500;
@@ -125,6 +129,7 @@ void calibrarSensores();
 
 void actualizarDedo(uint8_t i, float dt);
 void enviarCambios();
+void enviarImuCursor();
 
 void setup() {
   Serial.begin(115200);
@@ -144,6 +149,8 @@ void setup() {
     pulsoActivoEnviado[i] = false;
     pulsoReposoForzado[i] = false;
     pulsoActivoDesde[i] = 0;
+    gyroRateX[i] = 0;
+    gyroRateY[i] = 0;
   }
 
   lastTime = millis();
@@ -173,6 +180,7 @@ void loop() {
 
   if (sensoresCalibrados && envioDatosHabilitado) {
     enviarCambios();
+    enviarImuCursor();
   }
   delay(6);
 }

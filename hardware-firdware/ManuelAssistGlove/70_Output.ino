@@ -29,3 +29,24 @@ void enviarCambios() {
     }
   }
 }
+
+void enviarImuCursor() {
+  unsigned long now = millis();
+  if (now - ultimoEnvioImu < IMU_CURSOR_MS) return;
+  ultimoEnvioImu = now;
+  if (!sensorOK[INDICE]) return;
+
+  String msg = "IMU:";
+  msg += dedos[INDICE];
+  msg += ",";
+  msg += String(angleXFilt[INDICE], 2);
+  msg += ",";
+  msg += String(angleYFilt[INDICE], 2);
+  msg += ",";
+  msg += String(gyroRateX[INDICE], 2);
+  msg += ",";
+  msg += String(gyroRateY[INDICE], 2);
+  msg += ",";
+  msg += estadoConfirmado[INDICE];
+  enviarAPC(msg);
+}

@@ -78,6 +78,7 @@ void procesarRed() {
   if (msg == "CMD:START_STREAM") {
     if (sensoresCalibrados) {
       envioDatosHabilitado = true;
+      ultimoEnvioImu = 0;
       for (uint8_t i = 0; i < NUM_SENSORES; i++) {
         ultimoEstadoEnviado[i] = "";
         pulsoActivoEnviado[i] = false;
@@ -110,6 +111,7 @@ void procesarRed() {
 
 void olvidarConexion() {
   envioDatosHabilitado = false;
+  ultimoEnvioImu = 0;
   pcConectada = false;
   pcIp = IPAddress(0, 0, 0, 0);
   ultimoHello = 0;
